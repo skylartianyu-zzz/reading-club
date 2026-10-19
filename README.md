@@ -24,7 +24,7 @@ Render service: https://reading-club-d7if.onrender.com
 
 1. Keep `ENROLLMENT_OPEN=false` while configuring. Use one Render instance with the persistent disk in `render.yaml`.
 2. Set `SITE_URL` to the HTTPS origin. When absent, the app uses Render's trusted `RENDER_EXTERNAL_URL`; production rejects invalid URLs and never uses a visitor-supplied Host header.
-3. Set matching Stripe environment values: `STRIPE_SECRET_KEY`, `TUITION_PRICE_ID`, and `DROPIN_PRICE_ID`. Tuition must be $450 USD one-time; drop-in must be $40 USD one-time. Retain `MEMBER_PRICE_ID` for legacy recurring receipts. Every checkout revalidates the price and refuses recurring prices for current membership.
+3. Set `STRIPE_SECRET_KEY` from the NYPS account (below). Checkout charges the amounts in `program.json`. Optional `TUITION_PRICE_ID`/`DROPIN_PRICE_ID` must be one-time USD prices matching it; every checkout revalidates a configured price. `MEMBER_PRICE_ID` is only for legacy recurring receipts.
 4. Create an event destination at `https://reading-club-d7if.onrender.com/webhooks/stripe`, subscribing to `checkout.session.completed` and `checkout.session.async_payment_succeeded`. Store its signing secret as `STRIPE_WEBHOOK_SECRET` on Render.
 5. Set a long random `LOGIN_SECRET`. Normally set `RESEND_API_KEY` and `MAIL_FROM` using a verified sending domain. To launch without email, explicitly set `EMAIL_DELIVERY_MODE=on_page`: verified payment opens the member page, sets an HttpOnly secure browser cookie, and offers a downloadable private access file. Members must keep that file; email recovery is unavailable. A valid member link remembers the browser for another 60 days. Payment confirmation can renew access while enrollment remains active. Lost-link recovery requires organizer identity/payment verification. Tokens and email contents are never logged as a fallback.
 6. Retain `BILLING_PORTAL_CONFIG_ID` for legacy recurring memberships. Current one-time course purchases do not create subscriptions and do not need a recurring billing portal.
@@ -33,14 +33,18 @@ Render service: https://reading-club-d7if.onrender.com
 9. Exercise the full flow with Stripe test credentials and test prices first: successful payment, decline, authentication, invalid code, full discount, cancel/return, webhook retry, member email, calendar and billing cancellation. Test email delivery using an address controlled by the organizer.
 10. Switch to matching live credentials/prices after those checks. The account owner should complete the authorized real-payment check. Open enrollment only when the whole flow and program details are ready.
 
-Live catalog entries created October 3, 2026 in account `acct_1TDSFELFXIBpLlZr`:
+### Stripe account: New York Philosophical Society Inc
 
-| Plan | Product | Price |
-| --- | --- | --- |
-| Membership, paid once | `prod_VNF5oRCW7gXv9f` | `price_1UMZcCLFXIBpLlZrS69HDvil` |
-| Drop-in | `prod_VNFES34KNTiSy6` | `price_1UMUkALFXIBpLlZrSLMHq2aK` |
+Payments go to the NYPS Stripe account `acct_1Qe9F7HjghR54oGp`, the same account as the club's payment links (for example the "Reading Club Fall" $450 link). `npm run verify:payments` fails if the configured key belongs to any other account.
 
-The live products, restricted server key, webhook, and dedicated portal `bpc_1UMVAqLFXIBpLlZrWmlZROPV` were connected to Render on October 3. Both live checkout types were created with the correct totals and expired without payment. This does not demonstrate a successfully settled charge.
+The app makes its own Checkout Session for each signup and does not use the payment link. This keeps section choice, seat limits, member access and confirmation emails working. Amounts come from `memberPrice` and `dropInPrice` in `program.json`, so no Stripe products or prices are needed; change the price there and redeploy. Setting `TUITION_PRICE_ID` or `DROPIN_PRICE_ID` instead pins checkout to that Stripe price, which must match `program.json`. To connect it, in the NYPS dashboard (live mode):
+
+1. Create a restricted key with write access to Checkout Sessions, Customers and Customer portal, and read access to Prices, Promotion Codes, Subscriptions and Webhook Endpoints. Set it as `STRIPE_SECRET_KEY` on Render.
+2. On Render, clear `TUITION_PRICE_ID`, `DROPIN_PRICE_ID`, `MEMBER_PRICE_ID` and `BILLING_PORTAL_CONFIG_ID` (they point at the old account).
+3. Add the webhook from step 4 above in the NYPS account and replace `STRIPE_WEBHOOK_SECRET`.
+4. Run `npm run verify:payments`, then make one real checkout to confirm.
+
+Earlier setup (October 3, 2026) used a different account, `acct_1TDSFELFXIBpLlZr`, with products `prod_VNF5oRCW7gXv9f` and `prod_VNFES34KNTiSy6`. Retire those prices and that webhook after the switch.
 
 ## Payment confirmation and capacity
 

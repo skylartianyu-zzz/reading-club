@@ -14,13 +14,15 @@ loadLocalEnv();
 const env = process.env;
 const program = loadProgram();
 const onVercel = Boolean(env.VERCEL);
-const paymentKeys = ['STRIPE_SECRET_KEY', 'MEMBER_PRICE_ID', 'DROPIN_PRICE_ID', ...(program.billing?.model === 'upfront-450-v1' ? ['TUITION_PRICE_ID'] : [])];
+// One-time charges use program.json amounts unless TUITION_PRICE_ID/DROPIN_PRICE_ID pin a Stripe price.
+// Only legacy recurring memberships need a configured price.
+const paymentKeys = ['STRIPE_SECRET_KEY', ...(program.billing?.model === 'upfront-450-v1' ? [] : ['MEMBER_PRICE_ID'])];
 const partialStripe = paymentKeys.some((key) => env[key]) && !paymentKeys.every((key) => env[key]);
 const stripe = env.STRIPE_SECRET_KEY ? new (require('stripe'))(env.STRIPE_SECRET_KEY, { maxNetworkRetries: 2, timeout: 15000 }) : null;
 if (partialStripe) console.error('[payments] Incomplete Stripe configuration. Enrollment is closed.');
 
 function pickLedger() {
-  if (env.STRIPE_SECRET_KEY && env.MEMBER_PRICE_ID && env.DROPIN_PRICE_ID) {
+  if (paymentKeys.every((key) => env[key])) {
     console.log('[payments] Stripe checkout is on.');
     return createStripeLedger({
       stripe, program,

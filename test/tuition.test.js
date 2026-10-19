@@ -93,3 +93,15 @@ test('advertised equivalent rate discloses full upfront cost and 18-session brea
   }
   assert.match(await (await fetch(base + '/join')).text(), /Continue to \$450 checkout/);
 });
+test('without a configured price, checkout charges the program.json amount and confirmation checks it', async () => {
+  const p = checkoutParams({ program, plan: 'dropin', section: program.sections[0], date: '2026-10-26', source: 'direct', amount: 4000, base: 'https://example.com' });
+  assert.equal(p.line_items[0].price, undefined);
+  assert.deepEqual({ ...p.line_items[0].price_data, product_data: undefined }, { currency: 'usd', unit_amount: 4000, product_data: undefined });
+  assert.equal(p.metadata.unit_amount, '4000');
+  const inline = (amount, recorded) => session({ metadata: { ...session().metadata, unit_amount: recorded },
+    line_items: { data: [{ price: { id: 'price_adhoc', unit_amount: amount, currency: 'usd', recurring: null }, quantity: 1 }] } });
+  const ok = createStripeLedger({ stripe: fakeStripe({ program, sessions: [inline(45000, '45000')] }), program, prices: {}, log: quiet });
+  assert.equal((await ok.receipt('cs_test_tuition')).upfront, true);
+  const tampered = createStripeLedger({ stripe: fakeStripe({ program, sessions: [inline(100, '45000')] }), program, prices: {}, log: quiet });
+  assert.equal(await tampered.receipt('cs_test_tuition'), null);
+});

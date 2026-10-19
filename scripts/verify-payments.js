@@ -6,12 +6,16 @@ const { loadProgram } = require('../lib/app');
 const { expectedPrices, priceProblem } = require('../lib/ledger-stripe');
 loadLocalEnv();
 const env = process.env;
+// New York Philosophical Society Inc, the account behind the club's Stripe payment links.
+const NYPS_ACCOUNT = 'acct_1Qe9F7HjghR54oGp';
 const checks = [];
 const check = (name, ok, detail) => checks.push({ check: name, pass: Boolean(ok), detail });
 async function main() {
-  const required = ['STRIPE_SECRET_KEY', 'MEMBER_PRICE_ID', 'DROPIN_PRICE_ID', 'STRIPE_WEBHOOK_SECRET', 'LOGIN_SECRET', 'BILLING_PORTAL_CONFIG_ID'];
+  const upfront = loadProgram().billing?.model === 'upfront-450-v1';
+  const required = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'LOGIN_SECRET'];
   if (loadProgram().billing?.model === 'weekly-25-v1') required.push('INSTALLMENT_PRICE_ID', 'INSTALLMENT_PORTAL_CONFIG_ID');
-  if (loadProgram().billing?.model === 'upfront-450-v1') required.push('TUITION_PRICE_ID');
+  if (!upfront) required.push('MEMBER_PRICE_ID', 'BILLING_PORTAL_CONFIG_ID');
+  check('Pricing', true, ['TUITION_PRICE_ID', 'DROPIN_PRICE_ID'].filter((k) => env[k]).join(', ') || 'amounts from program.json');
   if (env.EMAIL_DELIVERY_MODE !== 'on_page') required.push('RESEND_API_KEY', 'MAIL_FROM');
   check('Access delivery', true, env.EMAIL_DELIVERY_MODE === 'on_page' ? 'on confirmation page; email recovery unavailable' : 'email');
   for (const key of required) check(key, env[key], env[key] ? 'configured' : 'missing');
@@ -22,7 +26,7 @@ async function main() {
     const stripe = new Stripe(env.STRIPE_SECRET_KEY, { timeout: 15000, maxNetworkRetries: 1 });
     try {
       const account = await stripe.accounts.retrieve();
-      check('Stripe account', account.id === 'acct_1TDSFELFXIBpLlZr', account.id);
+      check('Stripe account (New York Philosophical Society)', account.id === NYPS_ACCOUNT, account.id);
       check('Charges enabled', account.charges_enabled, String(account.charges_enabled));
       check('Payouts enabled', account.payouts_enabled, String(account.payouts_enabled));
     } catch (error) {
@@ -30,7 +34,7 @@ async function main() {
     }
     const expected = expectedPrices(loadProgram());
     const live = /^(sk|rk)_live_/.test(env.STRIPE_SECRET_KEY);
-    for (const [plan, id] of Object.entries({ ...(loadProgram().billing?.model === 'upfront-450-v1' ? { tuition: env.TUITION_PRICE_ID } : { member: env.MEMBER_PRICE_ID }), dropin: env.DROPIN_PRICE_ID })) {
+    for (const [plan, id] of Object.entries({ ...(upfront ? { tuition: env.TUITION_PRICE_ID } : { member: env.MEMBER_PRICE_ID }), dropin: env.DROPIN_PRICE_ID })) {
       if (!id) continue;
       const price = await stripe.prices.retrieve(id);
       const problem = priceProblem(price, expected[plan]);
@@ -43,12 +47,15 @@ async function main() {
       const hook = hooks.find((h) => h.url === `${base}/webhooks/stripe` && h.status === 'enabled' && h.livemode === live);
       check('Payment webhook', hook && ['checkout.session.completed', 'checkout.session.async_payment_succeeded'].every((e) => hook.enabled_events.includes(e) || hook.enabled_events.includes('*')), hook ? hook.url : 'missing or incomplete');
     }
-    const portals = await stripe.billingPortal.configurations.list({ active: true, limit: 100 });
-    const portal = env.BILLING_PORTAL_CONFIG_ID
-      ? await stripe.billingPortal.configurations.retrieve(env.BILLING_PORTAL_CONFIG_ID)
-      : portals.data.find((p) => p.is_default);
-    check('Billing portal cancellation', portal?.active && portal?.features?.subscription_cancel?.enabled, portal?.id || 'missing configuration');
-    check('Billing portal card updates', portal?.features?.payment_method_update?.enabled, portal?.id || 'missing configuration');
+    // One-time tuition has no subscription to cancel; the portal only serves legacy memberships.
+    if (!upfront || env.BILLING_PORTAL_CONFIG_ID) {
+      const portals = await stripe.billingPortal.configurations.list({ active: true, limit: 100 });
+      const portal = env.BILLING_PORTAL_CONFIG_ID
+        ? await stripe.billingPortal.configurations.retrieve(env.BILLING_PORTAL_CONFIG_ID)
+        : portals.data.find((p) => p.is_default);
+      check('Billing portal cancellation', portal?.active && portal?.features?.subscription_cancel?.enabled, portal?.id || 'missing configuration');
+      check('Billing portal card updates', portal?.features?.payment_method_update?.enabled, portal?.id || 'missing configuration');
+    }
     if (env.INSTALLMENT_PRICE_ID && loadProgram().billing?.model === 'weekly-25-v1') {
       const p = await stripe.prices.retrieve(env.INSTALLMENT_PRICE_ID);
       const problem = priceProblem(p, { unit_amount: 2500, currency: 'usd', type: 'recurring', interval: 'week', interval_count: 1 });
