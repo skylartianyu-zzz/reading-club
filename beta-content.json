@@ -1,0 +1,25 @@
+{
+  "_note": "Beta homepage content. null means not written yet; the page shows a visible [TBD] label in its place. Stripe pricing still comes from program.json.",
+  "readings": [
+    { "slug": "aristotle", "name": "Aristotle", "host": "cole", "coreIdea": null, "coreIdeas": [], "outline": [], "fullTextUrl": null },
+    { "slug": "confucius", "name": "Confucius", "host": null, "coreIdea": null, "coreIdeas": [], "outline": [], "fullTextUrl": null },
+    { "slug": "laozi", "name": "Laozi", "host": null, "coreIdea": null, "coreIdeas": [], "outline": [], "fullTextUrl": null },
+    { "slug": "proverbs", "name": "Proverbs", "host": null, "coreIdea": null, "coreIdeas": [], "outline": [], "fullTextUrl": null },
+    { "slug": "bhagavad-gita", "name": "Bhagavad Gita", "host": null, "coreIdea": null, "coreIdeas": [], "outline": [], "fullTextUrl": null },
+    { "slug": "dhammapada", "name": "Dhammapada", "host": null, "coreIdea": null, "coreIdeas": [], "outline": [], "fullTextUrl": null }
+  ],
+  "hosts": [
+    { "slug": "cole", "fromProgramTeacher": true },
+    { "slug": "host-2", "name": null, "role": "Host", "short": null, "bio": null, "photo": "" }
+  ],
+  "packages": [
+    {
+      "id": "single-topic",
+      "name": "Single Topic Package",
+      "price": 110,
+      "summary": "3 sessions in one topic",
+      "includes": ["Attend any 3 of the 6 weeks"],
+      "checkoutHref": null
+    }
+  ]
+}

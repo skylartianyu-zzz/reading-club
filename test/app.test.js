@@ -92,22 +92,46 @@ describe('schedule and helpers', () => {
 });
 
 describe('pages', () => {
-  test('landing has the offer, teacher, sections with enroll buttons, tuition, and questions', async () => {
+  test('beta landing: tagline, one sign-up button, reading cards, hosts, weekly columns, calendar slot, package', async () => {
     const s = await serve();
     const h = await s.html('/');
-    for (const t of ['Reading Club: The&nbsp;Good&nbsp;Life', 'Six weeks. Six traditions. One question: How should we live?', 'Aristotle', 'Dhammapada',
-      'How should we&nbsp;live?', 'Who teaches', 'Plato and Aristotle', 'Sections this term', '$25<span> per class hour</span>', '$40<span> per session</span>',
+    for (const t of ['Reading Club: The&nbsp;Good&nbsp;Life', 'Guided Reading Community, Join any time', 'Aristotle', 'Dhammapada',
+      '<strong>You don’t need to read the full books, or finish anything before joining.</strong>',
+      'Meet Your Hosts', 'Plato and Aristotle', 'How a week works', '>Lecture</h3>', '>Reading Club</h3>',
+      'A short intro to a topic', 'In-depth guided discussion', '<section id="calendar"></section>',
+      'Single Topic Package', '$110', '3 sessions in one topic', 'Attend any 3 of the 6 weeks', 'Checkout coming soon',
+      '$25<span> per class hour</span>', '$40<span> per session</span>', 'href="/join?plan=member"', 'href="/join?plan=dropin"',
+      'href="/login">Already a member? Sign In',
       'Questions', 'Registered 501(c)(3) public charity']) assert.ok(h.includes(t), `missing ${t}`);
-    for (const id of ['a', 'b', 'c']) assert.ok(h.includes(`/join?plan=member&amp;section=${id}`));
+    for (const gone of ['Begins', 'Choose your section', 'Sections this term']) assert.ok(!h.includes(gone), `still has ${gone}`);
+    assert.strictEqual((h.match(/class="btn btn-light" href="#signup">Sign Up Now/g) || []).length, 1, 'one hero sign-up button');
+    assert.ok(h.includes('id="signup"'));
+    assert.strictEqual((h.match(/class="reading-card" href="\/readings\//g) || []).length, 6, 'six reading cards');
+    assert.strictEqual((h.match(/class="reading-preview"/g) || []).length, 6, 'six hover previews');
+    assert.ok(h.includes('href="/hosts/cole"'));
+    assert.ok(h.includes('<span class="tbd">[TBD]</span>'), 'placeholders are labelled');
     assert.ok(!h.includes('—'), 'no em dashes');
     assert.ok(!/<script/i.test(h), 'no scripts');
     assert.strictEqual((h.match(/<h1/g) || []).length, 1, 'one h1');
     s.close();
   });
 
+  test('reading and host subpages render, with [TBD] for missing content, and 404 for unknown slugs', async () => {
+    const s = await serve();
+    const r = await s.html('/readings/aristotle');
+    for (const t of ['Nicomachean Ethics', 'Core ideas', 'Handout outline', 'The complete work', 'Your host', 'href="/hosts/cole"', '[TBD]']) assert.ok(r.includes(t), `reading missing ${t}`);
+    const cole = await s.html('/hosts/cole');
+    for (const t of ['Plato and Aristotle', 'Readings hosted', 'href="/readings/aristotle"']) assert.ok(cole.includes(t), `host missing ${t}`);
+    assert.ok((await s.html('/hosts/host-2')).includes('[TBD]'));
+    for (const p of ['/readings/confucius', '/readings/bhagavad-gita', '/readings/dhammapada']) assert.strictEqual((await s.get(p)).status, 200, p);
+    assert.strictEqual((await s.get('/readings/nope')).status, 404);
+    assert.strictEqual((await s.get('/hosts/nope')).status, 404);
+    s.close();
+  });
+
   test('every page links only to assets that exist, and sends security headers', async () => {
     const s = await serve();
-    for (const p of ['/', '/join', '/join?plan=dropin', '/login', '/nope']) {
+    for (const p of ['/', '/readings/aristotle', '/hosts/cole', '/join', '/join?plan=dropin', '/login', '/nope']) {
       const res = await s.get(p);
       assert.match(res.headers.get('content-security-policy'), /frame-ancestors 'none'/);
       const h = await res.text();
