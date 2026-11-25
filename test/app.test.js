@@ -98,7 +98,7 @@ describe('pages', () => {
     for (const t of ['Reading Club: The&nbsp;Good&nbsp;Life', 'Guided Reading Community, Join any time', 'Aristotle', 'Dhammapada',
       '<strong>You don’t need to read the full books, or finish anything before joining.</strong>',
       'Meet Your Hosts', 'Plato and Aristotle', 'How a week works', '>Lecture</h3>', '>Reading Club</h3>',
-      'A short intro to a topic', 'In-depth guided discussion', '<section id="calendar"></section>',
+      'A short intro to a topic', 'In-depth guided discussion', 'id="calendar" aria-labelledby="calendar-title"',
       'Single Topic Package', '$110', '3 sessions in one topic', 'Attend any 3 of the 6 weeks', 'Checkout coming soon',
       '$25<span> per class hour</span>', '$40<span> per session</span>', 'href="/join?plan=member"', 'href="/join?plan=dropin"',
       'href="/login">Already a member? Sign In',

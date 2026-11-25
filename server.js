@@ -63,6 +63,8 @@ const app = createApp({
   stripe, webhookSecret: env.STRIPE_WEBHOOK_SECRET, mailAvailable, onPageDelivery,
   enrollmentOpen,
   mailer: resendMailer({ apiKey: env.RESEND_API_KEY, from: env.MAIL_FROM }),
+  scheduleUrl: env.SCHEDULE_CSV_URL || program.scheduleCsvUrl,
+  lumaApiKey: env.LUMA_API_KEY,
 });
 
 if (require.main === module) {

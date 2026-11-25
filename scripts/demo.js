@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { createApp, loadProgram } = require('../lib/app');
 const { createLocalLedger } = require('../lib/ledger-local');
+const { createScheduleSource } = require('../lib/sheet-schedule');
 
 const program = loadProgram();
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'reading-club-demo-'));
@@ -22,4 +23,11 @@ createApp({
   loginSecret: 'demo-only-secret',
   privateInfo: { sections: { a: { zoom: 'https://zoom.us/j/0000000000' } }, lecture: { address: 'Venue to be announced' } },
   mailer: async ({ to, subject, text }) => console.log(`\n[demo mail to ${to}] ${subject}\n${text}\n`),
+  // Calendar reads a local copy of the Sheet's Schedule tab, so the demo works offline.
+  scheduleSource: createScheduleSource({
+    url: 'fixture', program,
+    fetchImpl: async () => ({ ok: true, status: 200, text: async () => fs.readFileSync(path.join(__dirname, '../test/fixtures/schedule.csv'), 'utf8') }),
+  }),
+  // Pretend Luma says the sample lecture is open (the real lookup waits for LUMA_API_KEY).
+  luma: { statuses: async () => new Map([['/sample-plato', 'open']]) },
 }).listen(PORT, () => console.log(`Demo on http://localhost:${PORT} (sample data, nothing is saved)`));
