@@ -10,6 +10,7 @@
   "termStarts": "2026-10-18",
   "weeks": 6,
   "timezone": "America/New_York",
+  "scheduleCsvUrl": "https://docs.google.com/spreadsheets/d/e/2PACX-1vTFlYok5SQhP0G1NMQGpXdJyvPiwgmJyGQuN-MIbTkXm4nq7GWSJyeJ4Qv3wO9Q56vw6hihFDngDQ0s/pub?gid=2041436436&single=true&output=csv",
   "hoursPerWeek": 2.5,
   "memberPrice": 450,
   "billing": { "model": "upfront-450-v1", "includedSessions": 18, "sessionEquivalent": 25 },
