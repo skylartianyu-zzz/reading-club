@@ -1,42 +1,147 @@
 'use strict';
 
-const { test } = require('node:test');
+const { test, describe } = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
 const { loadProgram } = require('../lib/app');
-const { publicEvents, termWeeks, calendarSection } = require('../lib/public-calendar');
+const { publicEvents, calendarSection, statusFor } = require('../lib/public-calendar');
+const { parseCsv, eventsFromCsv, parseDate, parseTime, createScheduleSource } = require('../lib/sheet-schedule');
+const { lumaKey } = require('../lib/luma');
 
 const program = loadProgram();
+const fixture = fs.readFileSync(path.join(__dirname, 'fixtures/schedule.csv'), 'utf8');
+const HEAD = 'Date,Start time,Minutes,Type,Session,Host,Reading,Description,Where,Signup link,Luma event ID,Note';
 
-test('public calendar lists every session for the term from program.json', () => {
-  const events = publicEvents(program);
-  const per = program.sections.reduce((n, s) => n + s.weekdays.length, 0);
-  const expected = program.weeks * (1 + per + (program.officeHours ? 1 : 0));
-  assert.strictEqual(events.length, expected);
-  assert.ok(events.every((e, i) => i === 0 || events[i - 1].date + events[i - 1].time <= e.date + e.time), 'sorted');
-});
+describe('reading the Schedule sheet', () => {
+  test('parses quoted CSV with commas, quotes and line breaks', () => {
+    assert.deepStrictEqual(parseCsv('a,"b, c","say ""hi""","two\nlines"\r\n1,2,3,4\n'), [['a', 'b, c', 'say "hi"', 'two\nlines'], ['1', '2', '3', '4']]);
+  });
 
-test('office-hour date overrides are applied', () => {
-  const dates = publicEvents(program).filter((e) => e.kind === 'office').map((e) => e.date);
-  for (const [from, to] of Object.entries(program.officeHours?.dateOverrides || {})) {
-    assert.ok(!dates.includes(from));
-    assert.ok(dates.includes(to));
-  }
-});
+  test('reads every row of the published Schedule tab', () => {
+    const events = eventsFromCsv(fixture, program);
+    assert.strictEqual(events.length, 60);
+    assert.deepStrictEqual([...new Set(events.map((e) => e.kind))].sort(), ['lecture', 'office', 'section']);
+    const a = events.find((e) => e.date === '2026-10-19');
+    assert.strictEqual(a.sectionId, 'a');
+    assert.strictEqual(a.reading, 'Aristotle');
+  });
 
-test('weeks pair with readings and contain only their own dates', () => {
-  const weeks = termWeeks(program);
-  assert.strictEqual(weeks.length, program.weeks);
-  weeks.forEach((w, i) => {
-    assert.strictEqual(w.text?.name, program.texts[i]?.name);
-    assert.ok(w.events.every((e) => e.date >= w.start && e.date <= w.end));
+  test('[TBD] counts as empty and is never shown', () => {
+    const e = eventsFromCsv(fixture, program).find((x) => x.date === '2026-10-18');
+    assert.strictEqual(e.description, '');
+    assert.strictEqual(e.signupUrl, '');
+    assert.strictEqual(e.host, 'Cole');
+  });
+
+  test('bad rows are skipped instead of breaking the page', () => {
+    const csv = `${HEAD}\nnot a date,11:00,90,Lecture,X,,,,,,,\n2026-12-06,lunch,90,Lecture,X,,,,,,,\n2026-12-06,11:00,90,Party,X,,,,,,,\n2026-12-06,11:00,90,Lecture,Weekly lecture,Cole,Plato,Ok,,https://luma.com/x,,\n`;
+    const events = eventsFromCsv(csv, program);
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].description, 'Ok');
+  });
+
+  test('columns can be reordered; only https links are kept', () => {
+    const csv = 'Type,Date,Start time,Session,Signup link\nLecture,2026-12-06,7 pm,Weekly lecture,javascript:alert(1)\n';
+    const [e] = eventsFromCsv(csv, program);
+    assert.strictEqual(e.time, '19:00');
+    assert.strictEqual(e.signupUrl, '');
+  });
+
+  test('dates and times in the formats people actually type', () => {
+    assert.strictEqual(parseDate('2026-12-07'), '2026-12-07');
+    assert.strictEqual(parseDate('12/7/2026'), '2026-12-07');
+    assert.strictEqual(parseDate('2026-02-30'), null);
+    assert.strictEqual(parseTime('19:00'), '19:00');
+    assert.strictEqual(parseTime('7:30 PM'), '19:30');
+    assert.strictEqual(parseTime('12 pm'), '12:00');
+    assert.strictEqual(parseTime('25:00'), null);
   });
 });
 
-test('calendar section marks the current week and never includes private links', () => {
-  const today = termWeeks(program)[1].start;
-  const html = calendarSection(program, { today });
-  assert.match(html, /id="calendar"/);
-  assert.match(html, /aria-current="date"/);
-  assert.match(html, /href="\/schedule\.ics"/);
-  assert.doesNotMatch(html, /zoom\.us|https?:\/\/(?!nyphilosophy)/i);
+describe('sheet source', () => {
+  const ok = (text) => async () => ({ ok: true, status: 200, text: async () => text });
+  const quiet = { error() {} };
+
+  test('falls back to program.json when the sheet is unreachable', async () => {
+    const src = createScheduleSource({ url: 'x', program, fallback: () => publicEvents(program), fetchImpl: async () => { throw new Error('offline'); }, log: quiet });
+    assert.strictEqual((await src.get()).length, publicEvents(program).length);
+  });
+
+  test('keeps the last good copy when a later fetch fails', async () => {
+    let t = 0;
+    let fail = false;
+    const src = createScheduleSource({
+      url: 'x', program, ttlMs: 10, now: () => t, log: quiet,
+      fetchImpl: async () => { if (fail) throw new Error('down'); return ok(fixture)(); },
+    });
+    assert.strictEqual((await src.get()).length, 60);
+    fail = true; t = 100;
+    await src.refresh();
+    assert.strictEqual((await src.get()).length, 60);
+  });
+
+  test('rejects an HTML page (sheet published as a web page, not CSV)', async () => {
+    const src = createScheduleSource({ url: 'x', program, fallback: () => [], fetchImpl: ok('<html>nope</html>'), log: quiet });
+    assert.deepStrictEqual(await src.get(), []);
+  });
+});
+
+describe('month calendar', () => {
+  const events = eventsFromCsv(fixture, program);
+  const today = '2026-11-24';
+
+  test('hides past sessions and starts at the current month', () => {
+    const html = calendarSection({ events, today });
+    assert.match(html, /November 2026/);
+    assert.doesNotMatch(html, /Section A<\/p>\s*<p class="ev-sub">Dhammapada/); // Mon Nov 23 is past
+    assert.strictEqual((html.match(/class="ev /g) || []).length, 5); // Nov 24 B, Nov 25 C + office, Nov 29 lecture, Nov 30 A
+    assert.doesNotMatch(html, /\?month=2026-10/);
+  });
+
+  test('can move forward month by month, but not into the past or beyond the last session', () => {
+    assert.match(calendarSection({ events, today, month: '2026-12' }), /December 2026/);
+    assert.match(calendarSection({ events, today, month: '2026-09' }), /<h3[^>]*>November 2026/);
+    assert.match(calendarSection({ events, today, month: '2027-06' }), /<h3[^>]*>November 2026/);
+    assert.doesNotMatch(calendarSection({ events, today, month: '2027-01' }), /Feb 2027/);
+  });
+
+  test('lecture pop-up links to Luma; weekday pop-up shows description, host and sign-up', () => {
+    const html = calendarSection({ events, today, month: '2026-11', signupHref: '/#sections' });
+    assert.match(html, /href="https:\/\/luma\.com\/sample-plato" target="_blank" rel="noopener">Sign up on Luma/);
+    const dec = calendarSection({ events, today, month: '2026-12', signupHref: '/#sections' });
+    assert.match(dec, /SAMPLE: Apology 17a/);
+    assert.match(dec, /With Stephen/);
+    assert.match(dec, /href="\/#sections">Sign up/);
+    assert.match(dec, /Luma sign-up link coming soon/);
+  });
+
+  test('Open / Full comes from seat counts; Open / Sold out from Luma', () => {
+    const b = events.find((e) => e.date === '2026-11-24');
+    assert.strictEqual(statusFor(b, { avail: { b: { dates: [{ date: '2026-11-24', left: 0 }] } } }), 'full');
+    assert.strictEqual(statusFor(b, { avail: { b: { dates: [{ date: '2026-11-24', left: 3 }] } } }), 'open');
+    assert.strictEqual(statusFor(b, { avail: null }), null);
+    const lec = events.find((e) => e.date === '2026-11-29');
+    assert.strictEqual(statusFor(lec, { luma: new Map() }), null);
+    assert.strictEqual(statusFor(lec, { luma: new Map([['/sample-plato', 'sold_out']]) }), 'sold_out');
+    assert.strictEqual(lumaKey('https://lu.ma/Sample-Plato?utm=x'), '/sample-plato');
+  });
+
+  test('escapes whatever instructors type', () => {
+    const csv = `${HEAD}\n2026-11-30,19:00,60,Small group,Section A,<b>Eve</b>,Plato,"<script>x</script> & more",Zoom,,,\n`;
+    const html = calendarSection({ events: eventsFromCsv(csv, program), today });
+    assert.doesNotMatch(html, /<script>x/);
+    assert.match(html, /&lt;script&gt;x&lt;\/script&gt; &amp; more/);
+    assert.match(html, /With &lt;b&gt;Eve&lt;\/b&gt;/);
+  });
+
+  test('program.json fallback produces the same event shape', () => {
+    const fb = publicEvents(program);
+    assert.ok(fb.length > 0);
+    assert.ok(fb.every((e) => e.kind && e.date && e.time && 'description' in e && 'signupUrl' in e));
+    const moved = fb.filter((e) => e.kind === 'office').map((e) => e.date);
+    for (const [from, to] of Object.entries(program.officeHours?.dateOverrides || {})) {
+      assert.ok(!moved.includes(from) && moved.includes(to));
+    }
+  });
 });
