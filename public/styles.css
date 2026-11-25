@@ -471,3 +471,32 @@ details.code summary { cursor: pointer; color: var(--ink); text-decoration: unde
   .pop { display: block; position: static; width: auto; padding: 0.5rem 0 0; border: 0; box-shadow: none; background: transparent; }
   .pop::before, .pop .pop-kind, .pop .pop-title { display: none; }
 }
+
+/* Month switching without reloading: one hidden radio per month (see public-calendar.js MAX_MONTHS). */
+.mcal-panel { display: none; }
+.mcal-r0:checked ~ .mcal-p0,
+.mcal-r1:checked ~ .mcal-p1,
+.mcal-r2:checked ~ .mcal-p2,
+.mcal-r3:checked ~ .mcal-p3,
+.mcal-r4:checked ~ .mcal-p4,
+.mcal-r5:checked ~ .mcal-p5,
+.mcal-r6:checked ~ .mcal-p6,
+.mcal-r7:checked ~ .mcal-p7,
+.mcal-r8:checked ~ .mcal-p8,
+.mcal-r9:checked ~ .mcal-p9,
+.mcal-r10:checked ~ .mcal-p10,
+.mcal-r11:checked ~ .mcal-p11 { display: block; }
+/* Keyboard: Tab to the month, arrow keys switch; the visible month heading shows focus. */
+.mcal-r0:focus-visible ~ .mcal-p0 .mcal-month,
+.mcal-r1:focus-visible ~ .mcal-p1 .mcal-month,
+.mcal-r2:focus-visible ~ .mcal-p2 .mcal-month,
+.mcal-r3:focus-visible ~ .mcal-p3 .mcal-month,
+.mcal-r4:focus-visible ~ .mcal-p4 .mcal-month,
+.mcal-r5:focus-visible ~ .mcal-p5 .mcal-month,
+.mcal-r6:focus-visible ~ .mcal-p6 .mcal-month,
+.mcal-r7:focus-visible ~ .mcal-p7 .mcal-month,
+.mcal-r8:focus-visible ~ .mcal-p8 .mcal-month,
+.mcal-r9:focus-visible ~ .mcal-p9 .mcal-month,
+.mcal-r10:focus-visible ~ .mcal-p10 .mcal-month,
+.mcal-r11:focus-visible ~ .mcal-p11 .mcal-month { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: 4px; }
+label.mcal-step { cursor: pointer; user-select: none; }

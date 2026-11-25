@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { loadProgram } = require('../lib/app');
-const { publicEvents, calendarSection, statusFor } = require('../lib/public-calendar');
+const { publicEvents, calendarSection, statusFor, MAX_MONTHS } = require('../lib/public-calendar');
 const { parseCsv, eventsFromCsv, parseDate, parseTime, createScheduleSource } = require('../lib/sheet-schedule');
 const { lumaKey } = require('../lib/luma');
 
@@ -91,19 +91,37 @@ describe('month calendar', () => {
   const events = eventsFromCsv(fixture, program);
   const today = '2026-11-24';
 
+  // The panel for one month, e.g. panel(html, 0) is the first month shown.
+  const panel = (html, i) => html.split(`<div class="mcal-panel mcal-p${i}">`)[1].split('<div class="mcal-panel')[0];
+
   test('hides past sessions and starts at the current month', () => {
     const html = calendarSection({ events, today });
-    assert.match(html, /November 2026/);
+    const nov = panel(html, 0);
+    assert.match(nov, /<h3[^>]*>November 2026/);
     assert.doesNotMatch(html, /Section A<\/p>\s*<p class="ev-sub">Dhammapada/); // Mon Nov 23 is past
-    assert.strictEqual((html.match(/class="ev /g) || []).length, 5); // Nov 24 B, Nov 25 C + office, Nov 29 lecture, Nov 30 A
-    assert.doesNotMatch(html, /\?month=2026-10/);
+    assert.strictEqual((nov.match(/class="ev /g) || []).length, 5); // Nov 24 B, Nov 25 C + office, Nov 29 lecture, Nov 30 A
+    assert.doesNotMatch(html, /October 2026/);
   });
 
-  test('can move forward month by month, but not into the past or beyond the last session', () => {
-    assert.match(calendarSection({ events, today, month: '2026-12' }), /December 2026/);
-    assert.match(calendarSection({ events, today, month: '2026-09' }), /<h3[^>]*>November 2026/);
-    assert.match(calendarSection({ events, today, month: '2027-06' }), /<h3[^>]*>November 2026/);
-    assert.doesNotMatch(calendarSection({ events, today, month: '2027-01' }), /Feb 2027/);
+  test('switches months without reloading: every upcoming month is on the page, chosen by radio + label', () => {
+    const html = calendarSection({ events, today });
+    assert.doesNotMatch(html, /href="\/\?month=/, 'no page-reload links');
+    assert.deepStrictEqual([...html.matchAll(/<h3[^>]*>([A-Za-z]+ \d{4})/g)].map((m) => m[1]), ['November 2026', 'December 2026', 'January 2027']);
+    assert.strictEqual((html.match(/type="radio" name="mcal-month"/g) || []).length, 3);
+    assert.match(html, /id="mcal-r0" aria-label="Show November 2026" checked>/);
+    assert.match(panel(html, 0), /<label class="mcal-step" for="mcal-r1">Dec 2026/);
+    assert.match(panel(html, 1), /<label class="mcal-step" for="mcal-r0">.*Nov 2026/);
+    assert.doesNotMatch(panel(html, 2), /Feb 2027/);
+  });
+
+  test('?month= picks the first month shown, ignoring months out of range', () => {
+    assert.match(calendarSection({ events, today, month: '2026-12' }), /id="mcal-r1" aria-label="Show December 2026" checked>/);
+    for (const month of ['2026-09', '2027-06', 'junk']) assert.match(calendarSection({ events, today, month }), /id="mcal-r0" aria-label="Show November 2026" checked>/);
+  });
+
+  test('stylesheet can show every month the calendar renders', () => {
+    const css = fs.readFileSync(path.join(__dirname, '../public/styles.css'), 'utf8');
+    for (let i = 0; i < MAX_MONTHS; i++) assert.ok(css.includes(`.mcal-r${i}:checked ~ .mcal-p${i}`), `missing show rule ${i}`);
   });
 
   test('lecture pop-up links to Luma; weekday pop-up shows description, host and sign-up', () => {
